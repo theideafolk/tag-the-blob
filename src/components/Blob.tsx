@@ -25,9 +25,9 @@ const Blob: React.FC<BlobProps> = ({
   const { keys } = useControls();
   
   // Load the blob model
-  const { scene: blobScene } = useGLTF('/blob.glb', true);
+  const { scene: blobScene } = useGLTF('/assets/blob.glb', true);
   // Load the crown model if the blob is "it"
-  const { scene: crownScene } = useGLTF('/blob-crown.glb', true);
+  const { scene: crownScene } = useGLTF('/assets/blob-crown.glb', true);
   
   // Clone the models to avoid reference issues
   const blobModel = blobScene.clone();
@@ -371,5 +371,5 @@ const Blob: React.FC<BlobProps> = ({
 export default Blob;
 
 // Preload models to avoid glitches when first rendering
-useGLTF.preload('/blob.glb');
-useGLTF.preload('/blob-crown.glb');
+useGLTF.preload('/assets/blob.glb');
+useGLTF.preload('/assets/blob-crown.glb');
