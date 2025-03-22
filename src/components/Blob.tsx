@@ -5,7 +5,7 @@
  */
 import React, { useRef, useEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useGLTF, Text } from '@react-three/drei';
+import { useGLTF, Text, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import { useControls } from './useControls';
 import { Player, PowerUpType, useGameStore } from '../store/gameStore';
@@ -211,10 +211,11 @@ const Blob: React.FC<BlobProps> = ({
       // Calculate movement direction based on keys pressed
       const direction = new THREE.Vector3();
       
-      if (keys.forward) direction.z -= 1;
-      if (keys.backward) direction.z += 1;
-      if (keys.left) direction.x -= 1;
-      if (keys.right) direction.x += 1;
+      // Use absolute world coordinates for movement
+      if (keys.forward) direction.z -= 1;  // Move forward (negative Z)
+      if (keys.backward) direction.z += 1; // Move backward (positive Z)
+      if (keys.left) direction.x -= 1;     // Move left (negative X)
+      if (keys.right) direction.x += 1;    // Move right (positive X)
       
       // Activate power-up on spacebar
       if (keys.action && player.powerUp && !player.powerUpEndTime) {
@@ -225,20 +226,6 @@ const Blob: React.FC<BlobProps> = ({
       if (direction.length() > 0) {
         direction.normalize();
         isMoving = true;
-        
-        // Apply camera rotation to movement direction
-        const cameraDirection = new THREE.Vector3();
-        state.camera.getWorldDirection(cameraDirection);
-        cameraDirection.y = 0;
-        cameraDirection.normalize();
-        
-        const right = new THREE.Vector3();
-        right.crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection).normalize();
-        const forward = new THREE.Vector3();
-        forward.crossVectors(right, new THREE.Vector3(0, 1, 0)).normalize();
-        
-        const moveX = direction.x * right.x + direction.z * forward.x;
-        const moveZ = direction.x * right.z + direction.z * forward.z;
         
         // Calculate speed based on player state
         let speed = baseSpeed;
@@ -256,11 +243,12 @@ const Blob: React.FC<BlobProps> = ({
         }
         
         // Apply movement
-        const targetVelocity = new THREE.Vector3(moveX, 0, moveZ).multiplyScalar(speed);
+        const targetVelocity = new THREE.Vector3(direction.x, 0, direction.z).multiplyScalar(speed);
         
         // Smooth movement with acceleration
         currentVelocity.current.lerp(targetVelocity, 0.2);
         
+        // Update position
         const newPosition = new THREE.Vector3().copy(player.position).add(currentVelocity.current);
         
         // Keep player within bounds
@@ -277,11 +265,15 @@ const Blob: React.FC<BlobProps> = ({
           newPosition.y = 1; // Normal height
         }
         
-        // Update rotation based on movement direction
+        // Calculate rotation based on movement direction
         const newRotation = Math.atan2(currentVelocity.current.x, currentVelocity.current.z);
         
-        // Update the player position in the store
-        updatePlayerPosition(player.id, newPosition, newRotation);
+        // Update both the blob reference and the store
+        if (blobRef.current) {
+          blobRef.current.position.copy(newPosition);
+          // Sync position and rotation to store
+          updatePlayerPosition(player.id, newPosition, newRotation);
+        }
       } else {
         // Decelerate when no keys are pressed
         currentVelocity.current.multiplyScalar(0.9);
@@ -301,14 +293,10 @@ const Blob: React.FC<BlobProps> = ({
     
     // For ALL players (local and non-local), update mesh position and rotation from store
     if (blobRef.current) {
-      // Update the group position and rotation to match the player's state
+      // Update the group position to match the player's state
       blobRef.current.position.copy(player.position);
-      blobRef.current.rotation.y = player.rotation;
       
-      // Apply scale based on player's scale property
-      blobRef.current.scale.set(player.scale, player.scale, player.scale);
-      
-      // Apply bounce and squish effects
+      // Apply bounce effect
       const bounce = Math.abs(Math.sin(state.clock.elapsedTime * 5)) * 0.05;
       blobRef.current.position.y += bounce;
       
@@ -320,6 +308,9 @@ const Blob: React.FC<BlobProps> = ({
           player.scale * (2 - squish), 
           player.scale * squish
         );
+      } else {
+        // Reset scale when not moving
+        blobRef.current.scale.set(player.scale, player.scale, player.scale);
       }
     }
   });
@@ -333,44 +324,45 @@ const Blob: React.FC<BlobProps> = ({
   }
   
   return (
-    <group position={player.position} rotation-y={player.rotation}>
-      {/* Player name label */}
-      <Text
-        position={[0, 2.5, 0]}
-        fontSize={0.5}
-        color={player.isIt ? "#ff4444" : "#ffffff"}
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.05}
-        outlineColor="#000000"
-        outlineOpacity={0.8}
-        maxWidth={5}
-        overflowWrap="break-word"
-        whiteSpace="nowrap"
-        userData={{ keepUpright: true }}
-        renderOrder={2}
-      >
-        {player.name}
-        {isLocalPlayer && " (You)"}
-      </Text>
-      
-      {/* Local player indicator (arrow above) */}
-      {isLocalPlayer && (
-        <group position={[0, 3.2, 0]}>
-          <mesh position={[0, 0.3, 0]}>
-            <coneGeometry args={[0.2, 0.4, 16]} />
-            <meshStandardMaterial color="#44ff44" emissive="#22cc22" emissiveIntensity={0.5} />
-          </mesh>
-        </group>
-      )}
-      
-      {/* The blob model */}
+    <group>
+      {/* Root container at player position */}
       <group 
         ref={blobRef}
-        castShadow
-        receiveShadow
+        position={player.position}
       >
-        <primitive object={blobModel} />
+        {/* The blob model with rotation */}
+        <group rotation-y={player.rotation}>
+          <primitive object={blobModel} />
+        </group>
+
+        {/* 2D overlays that always face camera */}
+        <Billboard>
+          {/* Player name label */}
+          <Text
+            position={[0, 2.5, 0]}
+            fontSize={0.5}
+            color={player.isIt ? "#ff4444" : "#ffffff"}
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.05}
+            outlineColor="#000000"
+            outlineOpacity={0.8}
+            maxWidth={5}
+            overflowWrap="break-word"
+            whiteSpace="nowrap"
+          >
+            {player.name}
+            {isLocalPlayer && " (You)"}
+          </Text>
+          
+          {/* Local player indicator (arrow above) */}
+          {isLocalPlayer && (
+            <mesh position={[0, 3.2, 0]}>
+              <coneGeometry args={[0.2, 0.4, 16]} />
+              <meshStandardMaterial color="#44ff44" emissive="#22cc22" emissiveIntensity={0.5} />
+            </mesh>
+          )}
+        </Billboard>
       </group>
     </group>
   );

@@ -43,7 +43,12 @@ const Game: React.FC = () => {
     
     // Start bot movement
     startBotMovement();
-  }, []);
+    
+    // Ensure minimum number of players only once when component mounts
+    if (localPlayerId) {
+      useGameStore.getState().ensureMinimumPlayers();
+    }
+  }, [localPlayerId]);
   
   // Set up fixed camera perspective and constraints
   useEffect(() => {
@@ -141,74 +146,54 @@ const Game: React.FC = () => {
   }, []);
 
   return (
-    <>
-      <Canvas
-        shadows
-        gl={{ 
-          antialias: !isMobile, // Disable antialiasing on mobile for performance
-          powerPreference: "high-performance" 
-        }}
-        dpr={isMobile ? [1, 1.5] : [1, 2]} // Lower resolution on mobile
-      >
-        {/* Performance monitor */}
-        <Stats />
-        
-        {/* Camera setup */}
-        <PerspectiveCamera 
-          ref={cameraRef}
-          makeDefault 
-          position={[0, 10, 15]} 
-          fov={isMobile ? 75 : 60} 
-        />
-        <OrbitControls 
-          ref={orbitControlsRef}
-          enableZoom={true}
-          enablePan={false}
-          maxPolarAngle={Math.PI / 2.5}
-          minPolarAngle={Math.PI / 6}
-          minDistance={5}
-          maxDistance={30}
-          target={localPlayerId && players[localPlayerId] ? 
-            [
-              players[localPlayerId].position.x,
-              players[localPlayerId].position.y,
-              players[localPlayerId].position.z
-            ] : [0, 0, 0]
-          }
-          enableDamping={true}
-          dampingFactor={0.1}
-          enableRotate={false}
-        />
-        
-        {/* Lighting */}
-        <ambientLight intensity={0.5} />
+    <div className="w-full h-screen">
+      <Canvas shadows>
+        {/* Lighting setup */}
+        <ambientLight intensity={0.8} /> {/* Increase ambient light */}
         <directionalLight
           position={[10, 10, 5]}
-          intensity={1}
+          intensity={1.5}
           castShadow
-          shadow-mapSize-width={isMobile ? 1024 : 2048}
-          shadow-mapSize-height={isMobile ? 1024 : 2048}
-          shadow-camera-far={50}
-          shadow-camera-left={-20}
-          shadow-camera-right={20}
-          shadow-camera-top={20}
-          shadow-camera-bottom={-20}
+          shadow-mapSize={[2048, 2048]}
         />
-        
-        {/* Game world */}
+        <directionalLight
+          position={[-10, 10, -5]}
+          intensity={1}
+          castShadow={false}
+        />
+        <hemisphereLight
+          color="#ffffff"
+          groundColor="#444444"
+          intensity={0.7}
+        />
+
+        {/* Scene setup */}
+        <PerspectiveCamera
+          ref={cameraRef}
+          makeDefault
+          position={[0, 15, 15]}
+          fov={60}
+        />
+        <OrbitControls
+          ref={orbitControlsRef}
+          target={[0, 0, 0]}
+          enablePan={false}
+          minPolarAngle={Math.PI / 4}
+          maxPolarAngle={Math.PI / 2.5}
+          minDistance={10}
+          maxDistance={20}
+        />
+
+        {/* Game elements */}
         <Arena />
-        
-        {/* Game objects */}
-        {Object.values(players).map(player => (
-          <Blob 
-            key={player.id} 
-            player={player} 
+        {Object.values(players).map((player) => (
+          <Blob
+            key={player.id}
+            player={player}
             isLocalPlayer={player.id === localPlayerId}
           />
         ))}
-        
-        {/* Power-ups */}
-        {Object.values(powerUps).map(powerUp => (
+        {Object.values(powerUps).map((powerUp) => (
           <PowerUp
             key={powerUp.id}
             id={powerUp.id}
@@ -216,17 +201,18 @@ const Game: React.FC = () => {
             type={powerUp.type}
           />
         ))}
-        
-        {/* Controls component to handle keyboard inputs */}
-        <Controls />
       </Canvas>
+
+      {/* Controls */}
+      {isMobile ? (
+        <MobileControls />
+      ) : (
+        <Controls />
+      )}
       
       {/* Game UI overlay */}
       <GameUI />
-      
-      {/* Mobile touch controls overlay */}
-      <MobileControls />
-    </>
+    </div>
   );
 };
 

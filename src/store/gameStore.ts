@@ -92,6 +92,7 @@ interface GameState {
   collectPowerUp: (playerId: string, powerUpId: string) => void;
   activatePowerUp: (playerId: string) => void;
   moveBots: () => void;
+  ensureMinimumPlayers: () => void;
 }
 
 // Generate a random color for a player
@@ -105,6 +106,151 @@ const getBotName = (): string => {
   const adjectives = ['Happy', 'Silly', 'Bouncy', 'Wiggly', 'Jumpy', 'Zippy', 'Fluffy'];
   const nouns = ['Blob', 'Bubble', 'Bounce', 'Ball', 'Blob', 'Bounce', 'Bop'];
   return `${adjectives[Math.floor(Math.random() * adjectives.length)]} ${nouns[Math.floor(Math.random() * nouns.length)]}`;
+};
+
+// Bot names pool
+const BOT_NAMES = [
+  'BlobBot-1', 'BlobBot-2', 'BlobBot-3', 'BlobBot-4', 'BlobBot-5',
+  'BotBlob-A', 'BotBlob-B', 'BotBlob-C', 'BotBlob-D', 'BotBlob-E'
+];
+
+// Bot colors pool
+const BOT_COLORS = [
+  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD',
+  '#D4A5A5', '#9B9B9B', '#A8E6CF', '#FFB6B9', '#957DAD'
+];
+
+// Create a bot player
+const createBot = () => {
+  const randomPosition = new THREE.Vector3(
+    (Math.random() - 0.5) * 30,  // Random X between -15 and 15
+    1,                           // Fixed Y at ground level
+    (Math.random() - 0.5) * 30   // Random Z between -15 and 15
+  );
+
+  const botId = `bot-${uuidv4()}`;
+  const randomNameIndex = Math.floor(Math.random() * BOT_NAMES.length);
+  const randomColorIndex = Math.floor(Math.random() * BOT_COLORS.length);
+
+  return {
+    id: botId,
+    position: randomPosition,
+    rotation: Math.random() * Math.PI * 2,
+    color: BOT_COLORS[randomColorIndex],
+    isIt: false,
+    name: BOT_NAMES[randomNameIndex],
+    type: 'bot' as PlayerType,
+    isAlive: true,
+    taggedTime: null,
+    powerUp: null,
+    powerUpEndTime: null,
+    scale: 1
+  };
+};
+
+// Bot movement update interval
+const BOT_UPDATE_INTERVAL = 100; // milliseconds
+const BOT_SPEED = 0.1;
+const BOT_DETECTION_RADIUS = 5;
+
+// Update bot movement
+const updateBotMovement = (bot: Player, players: Record<string, Player>, powerUps: Record<string, PowerUp>) => {
+  if (!bot.isAlive) return bot;
+
+  let targetPosition = null;
+  const botPosition = new THREE.Vector3().copy(bot.position);
+  const ARENA_SIZE = 40;
+  const EDGE_BUFFER = 5; // Buffer zone near edges
+
+  // Check if bot is near arena edge
+  const isNearEdge = Math.abs(botPosition.x) > (ARENA_SIZE/2 - EDGE_BUFFER) || 
+                     Math.abs(botPosition.z) > (ARENA_SIZE/2 - EDGE_BUFFER);
+
+  if (isNearEdge) {
+    // Move towards center if near edge
+    targetPosition = new THREE.Vector3(0, 1, 0);
+  } else if (bot.isIt) {
+    // If bot is "it", chase the nearest player
+    let nearestPlayer: Player | null = null;
+    let minDistance = Infinity;
+
+    Object.values(players).forEach(player => {
+      if (player.id !== bot.id && player.isAlive && !player.isIt) {
+        const distance = botPosition.distanceTo(player.position);
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearestPlayer = player;
+        }
+      }
+    });
+
+    if (nearestPlayer) {
+      targetPosition = nearestPlayer.position.clone();
+    }
+  } else {
+    // If not "it", run from "it" player and collect power-ups
+    const itPlayer = Object.values(players).find(p => p.isIt);
+    if (itPlayer) {
+      const distanceToIt = botPosition.distanceTo(itPlayer.position);
+      
+      if (distanceToIt < BOT_DETECTION_RADIUS) {
+        // Run away from "it", but check if running towards edge
+        const awayDirection = new THREE.Vector3().subVectors(botPosition, itPlayer.position).normalize();
+        const potentialPosition = botPosition.clone().add(awayDirection.multiplyScalar(5));
+        
+        // If running away would lead to edge, find alternative direction
+        if (Math.abs(potentialPosition.x) > (ARENA_SIZE/2 - EDGE_BUFFER) || 
+            Math.abs(potentialPosition.z) > (ARENA_SIZE/2 - EDGE_BUFFER)) {
+          // Try moving perpendicular to escape direction
+          awayDirection.set(-awayDirection.z, awayDirection.y, awayDirection.x);
+        }
+        
+        targetPosition = botPosition.clone().add(awayDirection.multiplyScalar(5));
+      } else {
+        // Look for nearby power-ups if not in danger
+        let nearestPowerUp: PowerUp | null = null;
+        let minPowerUpDistance = Infinity;
+
+        Object.values(powerUps).forEach(powerUp => {
+          const distance = botPosition.distanceTo(powerUp.position);
+          if (distance < minPowerUpDistance && distance > 2) { // Prevent getting stuck on power-ups
+            minPowerUpDistance = distance;
+            nearestPowerUp = powerUp;
+          }
+        });
+
+        if (nearestPowerUp) {
+          targetPosition = nearestPowerUp.position.clone();
+        }
+      }
+    }
+  }
+
+  // If no target position, move randomly within safe bounds
+  if (!targetPosition) {
+    const randomAngle = Math.random() * Math.PI * 2;
+    const safeRadius = ARENA_SIZE/2 - EDGE_BUFFER;
+    targetPosition = new THREE.Vector3(
+      Math.cos(randomAngle) * safeRadius * Math.random(),
+      1,
+      Math.sin(randomAngle) * safeRadius * Math.random()
+    );
+  }
+
+  // Calculate direction and new position
+  const direction = new THREE.Vector3().subVectors(targetPosition, botPosition).normalize();
+  const newPosition = botPosition.clone().add(direction.multiplyScalar(BOT_SPEED));
+  
+  // Keep within bounds with buffer
+  newPosition.x = Math.max(-ARENA_SIZE/2 + 1, Math.min(ARENA_SIZE/2 - 1, newPosition.x));
+  newPosition.z = Math.max(-ARENA_SIZE/2 + 1, Math.min(ARENA_SIZE/2 - 1, newPosition.z));
+  newPosition.y = 1; // Keep consistent height
+  
+  return {
+    ...bot,
+    position: newPosition,
+    rotation: Math.atan2(direction.x, direction.z)
+  };
 };
 
 // Create the game store
@@ -210,6 +356,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUps: {},
       survivalTimes: {},
     });
+    
+    // Initial power-up spawn
+    const gameStore = useGameStore.getState();
+    if (gameStore.isGameActive) {
+      startPowerUpSpawner();
+    }
   },
   
   // End the current round
@@ -331,6 +483,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       const player = state.players[id];
       if (!player) return state;
       
+      // If player has speed power-up active, triple the movement
+      if (player.powerUp === 'speed' && player.powerUpEndTime && player.powerUpEndTime > Date.now()) {
+        const currentPos = player.position;
+        const movement = position.clone().sub(currentPos);
+        position = currentPos.clone().add(movement.multiplyScalar(3));
+      }
+      
       // If this is the local player, emit position to other players
       if (id === state.localPlayerId) {
         emitPlayerMove(id, position, rotation);
@@ -447,17 +606,44 @@ export const useGameStore = create<GameState>((set, get) => ({
       const newPowerUps = { ...state.powerUps };
       delete newPowerUps[powerUpId];
       
+      // Automatically activate power-up when collected
+      const powerUpEndTime = Date.now() + 5000; // 5 seconds duration
+      
       return {
         players: {
           ...state.players,
           [playerId]: {
             ...player,
-            powerUp: powerUp.type
+            powerUp: powerUp.type,
+            powerUpEndTime,
+            // Apply immediate effects based on power-up type
+            ...(powerUp.type === 'flight' && { position: new THREE.Vector3(player.position.x, 2, player.position.z) })
           }
         },
         powerUps: newPowerUps
       };
     });
+    
+    // Schedule power-up deactivation
+    setTimeout(() => {
+      set(state => {
+        const player = state.players[playerId];
+        if (!player) return state;
+        
+        return {
+          players: {
+            ...state.players,
+            [playerId]: {
+              ...player,
+              powerUp: null,
+              powerUpEndTime: null,
+              // Reset height if flight power-up is ending
+              ...(player.powerUp === 'flight' && { position: new THREE.Vector3(player.position.x, 1, player.position.z) })
+            }
+          }
+        };
+      });
+    }, 5000);
   },
   
   // Activate a player's power-up
@@ -586,45 +772,93 @@ export const useGameStore = create<GameState>((set, get) => ({
       
       return { players: newPlayers };
     });
-  }
+  },
+  
+  ensureMinimumPlayers: () => {
+    const state = get();
+    const players = state.players;
+    
+    // Count existing bots
+    const existingBots = Object.values(players).filter(player => player.type === 'bot').length;
+    const totalPlayers = Object.keys(players).length;
+    
+    // Only add bots if we have less than 2 bots AND total players is less than 3
+    if (existingBots < 2 && totalPlayers < 3) {
+      const botsNeeded = Math.min(2 - existingBots, 3 - totalPlayers);
+      const newPlayers = { ...players };
+      
+      for (let i = 0; i < botsNeeded; i++) {
+        const bot = createBot();
+        newPlayers[bot.id] = bot;
+      }
+      
+      set({ players: newPlayers });
+    }
+  },
 }));
 
 // Function to spawn power-ups randomly
 export const startPowerUpSpawner = () => {
   const spawnPowerUp = () => {
     const gameStore = useGameStore.getState();
+    
+    // Only spawn if game is active and we have less than 3 power-ups
     if (!gameStore.isGameActive) return;
+    
+    const currentPowerUps = Object.keys(gameStore.powerUps || {}).length;
+    if (currentPowerUps >= 3) return; // Limit to 3 power-ups at a time
     
     // Randomly choose a power-up type
     const powerUpTypes: PowerUpType[] = ['speed', 'invisibility', 'flight'];
     const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
     
-    // Random position within arena bounds
+    // Random position within arena bounds with some padding
+    const ARENA_SIZE = 40;
+    const EDGE_PADDING = 5;
     const position = new THREE.Vector3(
-      (Math.random() - 0.5) * 40,
-      1,
-      (Math.random() - 0.5) * 40
+      (Math.random() - 0.5) * (ARENA_SIZE - EDGE_PADDING * 2),
+      0.5, // Fixed at ground level (slightly above to be visible)
+      (Math.random() - 0.5) * (ARENA_SIZE - EDGE_PADDING * 2)
     );
     
     gameStore.addPowerUp(type, position);
-    
-    // Schedule next power-up spawn
-    const nextSpawnTime = 15000 + Math.random() * 5000; // 15-20 seconds
-    setTimeout(spawnPowerUp, nextSpawnTime);
   };
   
-  // Start spawning
+  // Spawn power-ups every 5-10 seconds
+  const spawnInterval = setInterval(() => {
+    spawnPowerUp();
+  }, 5000 + Math.random() * 5000);
+  
+  // Initial spawn
   spawnPowerUp();
+  
+  // Cleanup on game end
+  return () => clearInterval(spawnInterval);
 };
 
-// Start bot movement simulation
+// Start bot movement system
 export const startBotMovement = () => {
   setInterval(() => {
-    const gameStore = useGameStore.getState();
-    if (gameStore.isGameActive) {
-      gameStore.moveBots();
+    const state = useGameStore.getState();
+    if (!state.isGameActive) return;
+
+    const updatedPlayers = { ...state.players };
+    let hasChanges = false;
+
+    Object.values(updatedPlayers)
+      .filter(player => player.type === 'bot')
+      .forEach(bot => {
+        const updatedBot = updateBotMovement(bot, updatedPlayers, state.powerUps);
+        if (updatedBot !== bot) {
+          updatedPlayers[bot.id] = updatedBot;
+          hasChanges = true;
+        }
+      });
+
+    if (hasChanges) {
+      useGameStore.setState({ players: updatedPlayers });
     }
-  }, 100); // Update bot positions 10 times per second
+  }, BOT_UPDATE_INTERVAL);
 };
 
 // Function to end game session on application exit
