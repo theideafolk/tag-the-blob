@@ -19,23 +19,47 @@ const PowerUp: React.FC<PowerUpProps> = ({ id, position, type }) => {
   const localPlayerId = useGameStore(state => state.localPlayerId);
   const players = useGameStore(state => state.players);
   
-  // Check for collision with the local player
+  // Check for collision with any non-"it" player
   useEffect(() => {
-    if (!meshRef.current || !localPlayerId) return;
+    if (!meshRef.current) return;
     
     const checkCollision = () => {
-      const player = players[localPlayerId];
-      if (!player || player.isIt) return;
+      const powerUpPosition = new THREE.Vector3().copy(position);
       
-      const distance = position.distanceTo(player.position);
-      if (distance < 1.5) {
-        collectPowerUp(localPlayerId, id);
+      // Check collision with local player first
+      if (localPlayerId) {
+        const localPlayer = players[localPlayerId];
+        if (localPlayer && !localPlayer.isIt && localPlayer.isAlive) {
+          const playerPosition = new THREE.Vector3().copy(localPlayer.position);
+          const distance = powerUpPosition.distanceTo(playerPosition);
+          
+          // Increased collision radius for better collection
+          if (distance < 2.5) {
+            console.log('Local player collecting power-up:', localPlayerId); // Debug log
+            collectPowerUp(localPlayerId, id);
+            return; // Exit after collecting
+          }
+        }
       }
+      
+      // Then check collision with other players
+      Object.values(players).forEach(player => {
+        if (player.id !== localPlayerId && !player.isIt && player.isAlive) {
+          const playerPosition = new THREE.Vector3().copy(player.position);
+          const distance = powerUpPosition.distanceTo(playerPosition);
+          
+          if (distance < 2.5) {
+            console.log('Other player collecting power-up:', player.id); // Debug log
+            collectPowerUp(player.id, id);
+          }
+        }
+      });
     };
     
-    const interval = setInterval(checkCollision, 100);
+    // Check for collisions more frequently
+    const interval = setInterval(checkCollision, 25); // Check every 25ms
     return () => clearInterval(interval);
-  }, [id, position, localPlayerId, players, collectPowerUp]);
+  }, [id, position, players, collectPowerUp, localPlayerId]);
   
   // Animation for the power-up
   useFrame((state) => {

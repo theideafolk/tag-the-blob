@@ -176,6 +176,13 @@ const updateBotMovement = (bot: Player, players: Record<string, Player>, powerUp
 
     Object.values(players).forEach(player => {
       if (player.id !== bot.id && player.isAlive && !player.isIt) {
+        // Skip invisible players
+        if (player.powerUp === 'invisibility' && 
+            player.powerUpEndTime && 
+            player.powerUpEndTime > Date.now()) {
+          return;
+        }
+        
         const distance = botPosition.distanceTo(player.position);
         if (distance < minDistance) {
           minDistance = distance;
@@ -483,16 +490,32 @@ export const useGameStore = create<GameState>((set, get) => ({
       const player = state.players[id];
       if (!player) return state;
       
-      // If player has speed power-up active, triple the movement
-      if (player.powerUp === 'speed' && player.powerUpEndTime && player.powerUpEndTime > Date.now()) {
-        const currentPos = player.position;
-        const movement = position.clone().sub(currentPos);
-        position = currentPos.clone().add(movement.multiplyScalar(3));
+      let newPosition = position.clone();
+      
+      // Handle power-up effects
+      if (player.powerUp && player.powerUpEndTime && player.powerUpEndTime > Date.now()) {
+        if (player.powerUp === 'speed') {
+          // Triple speed for speed power-up
+          const currentPos = player.position;
+          const movement = position.clone().sub(currentPos);
+          newPosition = currentPos.clone().add(movement.multiplyScalar(3));
+        } else if (player.powerUp === 'flight') {
+          // Double speed and maintain height for flight power-up
+          const currentPos = player.position;
+          const movement = position.clone().sub(currentPos);
+          newPosition = currentPos.clone().add(movement.multiplyScalar(2));
+          newPosition.y = 2; // Maintain flight height
+        }
+      } else {
+        // Reset height when flight power-up ends
+        if (player.powerUp === 'flight') {
+          newPosition.y = 1;
+        }
       }
       
       // If this is the local player, emit position to other players
       if (id === state.localPlayerId) {
-        emitPlayerMove(id, position, rotation);
+        emitPlayerMove(id, newPosition, rotation);
       }
       
       return {
@@ -500,7 +523,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           ...state.players,
           [id]: {
             ...player,
-            position,
+            position: newPosition,
             rotation
           }
         }
@@ -519,9 +542,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
       
       // Emit player tagged event for multiplayer
-      if (taggerId === state.localPlayerId) {
-        emitPlayerTagged(taggedId, taggerId);
-      }
+      emitPlayerTagged(taggedId, taggerId);
       
       // Count how many players the tagger has tagged
       let tagCount = 1; // Start with 1 for the original "it"
@@ -592,22 +613,33 @@ export const useGameStore = create<GameState>((set, get) => ({
   
   // Player collects a power-up
   collectPowerUp: (playerId, powerUpId) => {
+    console.log('Collecting power-up:', playerId, powerUpId); // Debug log
+    
     set(state => {
       const player = state.players[playerId];
       const powerUp = state.powerUps[powerUpId];
       
-      if (!player || !powerUp || player.isIt) return state;
+      if (!player || !powerUp || player.isIt) {
+        console.log('Invalid collection:', { player, powerUp, isIt: player?.isIt }); // Debug log
+        return state;
+      }
       
       // Emit power-up collected for multiplayer
-      if (playerId === state.localPlayerId) {
-        emitPowerUpCollected(powerUpId);
-      }
+      emitPowerUpCollected(powerUpId);
       
       const newPowerUps = { ...state.powerUps };
       delete newPowerUps[powerUpId];
       
       // Automatically activate power-up when collected
       const powerUpEndTime = Date.now() + 5000; // 5 seconds duration
+      
+      console.log('Activating power-up:', { playerId, type: powerUp.type, endTime: powerUpEndTime }); // Debug log
+      
+      // Apply immediate effects based on power-up type
+      let newPosition = player.position.clone();
+      if (powerUp.type === 'flight') {
+        newPosition.y = 2; // Set flight height
+      }
       
       return {
         players: {
@@ -616,8 +648,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             ...player,
             powerUp: powerUp.type,
             powerUpEndTime,
-            // Apply immediate effects based on power-up type
-            ...(powerUp.type === 'flight' && { position: new THREE.Vector3(player.position.x, 2, player.position.z) })
+            position: newPosition
           }
         },
         powerUps: newPowerUps
@@ -630,6 +661,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         const player = state.players[playerId];
         if (!player) return state;
         
+        console.log('Deactivating power-up:', { playerId, type: player.powerUp }); // Debug log
+        
+        // Reset position when flight power-up ends
+        let newPosition = player.position.clone();
+        if (player.powerUp === 'flight') {
+          newPosition.y = 1;
+        }
+        
         return {
           players: {
             ...state.players,
@@ -637,8 +676,7 @@ export const useGameStore = create<GameState>((set, get) => ({
               ...player,
               powerUp: null,
               powerUpEndTime: null,
-              // Reset height if flight power-up is ending
-              ...(player.powerUp === 'flight' && { position: new THREE.Vector3(player.position.x, 1, player.position.z) })
+              position: newPosition
             }
           }
         };

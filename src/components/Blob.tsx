@@ -93,65 +93,41 @@ const Blob: React.FC<BlobProps> = ({
     }
   }, [player.isIt, crownScene, player.scale]);
   
-  // Apply power-up visual effects
+  // Apply power-up effects
   useEffect(() => {
     if (!blobRef.current) return;
     
-    // Reset any existing effects first
-    blobRef.current.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
-        if (Array.isArray(child.material)) {
-          child.material.forEach(mat => {
-            if (mat instanceof THREE.MeshStandardMaterial) {
-              mat.transparent = false;
-              mat.opacity = 1;
-              mat.emissive.set('#000000');
-              mat.emissiveIntensity = 0;
-            }
-          });
-        } else if (child.material instanceof THREE.MeshStandardMaterial) {
-          child.material.transparent = false;
-          child.material.opacity = 1;
-          child.material.emissive.set('#000000');
-          child.material.emissiveIntensity = 0;
-        }
-      }
-    });
+    // Find the main mesh in the blob group
+    const mainMesh = blobRef.current.children.find(child => 
+      child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial
+    ) as THREE.Mesh;
     
-    // Apply power-up effects if active
+    if (!mainMesh) return;
+    
     if (player.powerUp && player.powerUpEndTime && player.powerUpEndTime > Date.now()) {
-      blobRef.current.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.material) {
-          const applyEffect = (mat: THREE.MeshStandardMaterial) => {
-            switch (player.powerUp) {
-              case 'invisibility':
-                mat.transparent = true;
-                mat.opacity = 0.3;
-                break;
-              case 'speed':
-                mat.emissive.set('#FFFF00');
-                mat.emissiveIntensity = 0.5;
-                break;
-              case 'flight':
-                mat.emissive.set('#00FFFF');
-                mat.emissiveIntensity = 0.5;
-                break;
-            }
-          };
+      switch (player.powerUp) {
+        case 'speed':
+          // Speed effect is handled in updatePlayerPosition
+          break;
           
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => {
-              if (mat instanceof THREE.MeshStandardMaterial) {
-                applyEffect(mat);
-              }
-            });
-          } else if (child.material instanceof THREE.MeshStandardMaterial) {
-            applyEffect(child.material);
+        case 'invisibility':
+          // Only make invisible to "it" players
+          if (isLocalPlayer || !player.isIt) {
+            (mainMesh.material as THREE.MeshStandardMaterial).transparent = true;
+            (mainMesh.material as THREE.MeshStandardMaterial).opacity = 0.3;
           }
-        }
-      });
+          break;
+          
+        case 'flight':
+          // Flight effect is handled in updatePlayerPosition
+          break;
+      }
+    } else {
+      // Reset effects when power-up ends
+      (mainMesh.material as THREE.MeshStandardMaterial).transparent = false;
+      (mainMesh.material as THREE.MeshStandardMaterial).opacity = 1;
     }
-  }, [player.powerUp, player.powerUpEndTime]);
+  }, [player.powerUp, player.powerUpEndTime, player.isIt, isLocalPlayer]);
   
   // Handle collision detection with other players
   useEffect(() => {
@@ -184,8 +160,8 @@ const Blob: React.FC<BlobProps> = ({
         const otherPosition = new THREE.Vector3().copy(otherPlayer.position);
         const distance = thisPosition.distanceTo(otherPosition);
         
-        // Collision radius based on player scale
-        const collisionRadius = 1.5 * (player.scale + otherPlayer.scale) / 2;
+        // Increased collision radius for better tagging
+        const collisionRadius = 2.0 * (player.scale + otherPlayer.scale) / 2;
         
         if (distance < collisionRadius) {
           // Tag the player
@@ -194,8 +170,8 @@ const Blob: React.FC<BlobProps> = ({
       });
     };
     
-    // Check for collisions every 100ms
-    const collisionInterval = setInterval(checkCollisions, 100);
+    // Check for collisions more frequently
+    const collisionInterval = setInterval(checkCollisions, 50);
     return () => clearInterval(collisionInterval);
   }, [player.id, player.isIt, player.isAlive, player.position, player.scale, tagPlayer, isLocalPlayer]);
   
