@@ -627,7 +627,31 @@ export const useGameStore = create<GameState>((set, get) => ({
       // Emit power-up collected for multiplayer
       emitPowerUpCollected(powerUpId);
       
-      const newPowerUps = { ...state.powerUps };
+      // Create new power-up before removing the old one
+      const ARENA_SIZE = 40;
+      const EDGE_PADDING = 5;
+      const newPowerUpPosition = new THREE.Vector3(
+        (Math.random() - 0.5) * (ARENA_SIZE - EDGE_PADDING * 2),
+        0.5, // Fixed at ground level
+        (Math.random() - 0.5) * (ARENA_SIZE - EDGE_PADDING * 2)
+      );
+      
+      // Randomly choose a new power-up type
+      const powerUpTypes: PowerUpType[] = ['speed', 'invisibility', 'flight'];
+      const newType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+      
+      const newPowerUpId = `powerup-${uuidv4()}`;
+      const newPowerUps = {
+        ...state.powerUps,
+        [newPowerUpId]: {
+          id: newPowerUpId,
+          type: newType,
+          position: newPowerUpPosition,
+          createdAt: Date.now()
+        }
+      };
+      
+      // Remove the collected power-up
       delete newPowerUps[powerUpId];
       
       // Automatically activate power-up when collected
@@ -840,11 +864,19 @@ export const startPowerUpSpawner = () => {
   const spawnPowerUp = () => {
     const gameStore = useGameStore.getState();
     
-    // Only spawn if game is active and we have less than 3 power-ups
-    if (!gameStore.isGameActive) return;
+    // Removed game active check for testing
+    // if (!gameStore.isGameActive) {
+    //   console.log('Game not active, skipping power-up spawn');
+    //   return;
+    // }
     
     const currentPowerUps = Object.keys(gameStore.powerUps || {}).length;
-    if (currentPowerUps >= 3) return; // Limit to 3 power-ups at a time
+    console.log('Current power-ups:', currentPowerUps); // Debug log
+    
+    if (currentPowerUps >= 3) {
+      console.log('Maximum power-ups reached, skipping spawn');
+      return;
+    }
     
     // Randomly choose a power-up type
     const powerUpTypes: PowerUpType[] = ['speed', 'invisibility', 'flight'];
@@ -859,19 +891,34 @@ export const startPowerUpSpawner = () => {
       (Math.random() - 0.5) * (ARENA_SIZE - EDGE_PADDING * 2)
     );
     
+    console.log('Spawning power-up:', { type, position });
     gameStore.addPowerUp(type, position);
   };
   
   // Spawn power-ups every 5-10 seconds
   const spawnInterval = setInterval(() => {
-    spawnPowerUp();
+    const currentPowerUps = Object.keys(useGameStore.getState().powerUps || {}).length;
+    console.log('Checking power-ups in interval:', currentPowerUps); // Debug log
+    
+    if (currentPowerUps < 3) {
+      console.log('Spawning new power-up to maintain count');
+      spawnPowerUp();
+    }
   }, 5000 + Math.random() * 5000);
   
-  // Initial spawn
-  spawnPowerUp();
+  // Initial spawns to ensure we have 3 power-ups
+  const initialSpawns = 3 - Object.keys(useGameStore.getState().powerUps || {}).length;
+  console.log('Initial spawns needed:', initialSpawns); // Debug log
+  
+  for (let i = 0; i < initialSpawns; i++) {
+    spawnPowerUp();
+  }
   
   // Cleanup on game end
-  return () => clearInterval(spawnInterval);
+  return () => {
+    console.log('Cleaning up power-up spawner');
+    clearInterval(spawnInterval);
+  };
 };
 
 // Start bot movement system

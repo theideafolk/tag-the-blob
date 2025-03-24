@@ -2,10 +2,11 @@
  * PowerUp component that renders power-up items in the game
  * Displays different visual effects based on power-up type
  */
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { PowerUpType, useGameStore } from '../store/gameStore';
+import { useGLTF } from '@react-three/drei';
+import { useGameStore, PowerUpType } from '../store/gameStore';
 
 interface PowerUpProps {
   id: string;
@@ -13,126 +14,96 @@ interface PowerUpProps {
   type: PowerUpType;
 }
 
-const PowerUp: React.FC<PowerUpProps> = ({ id, position, type }) => {
+export const PowerUp: React.FC<PowerUpProps> = ({ id, position, type }) => {
   const meshRef = useRef<THREE.Mesh>(null);
-  const collectPowerUp = useGameStore(state => state.collectPowerUp);
-  const localPlayerId = useGameStore(state => state.localPlayerId);
-  const players = useGameStore(state => state.players);
+  const { collectPowerUp, players } = useGameStore();
+
+  // Load the appropriate GLB model based on power-up type
+  const modelPath = type ? `/assets/models/${type}.glb` : '';
+  console.log('Loading power-up model:', { type, modelPath, position }); // Debug log
   
-  // Check for collision with any non-"it" player
-  useEffect(() => {
-    if (!meshRef.current) return;
+  let scene;
+  try {
+    const result = useGLTF(modelPath);
+    scene = result.scene;
+    console.log('Model loaded successfully:', { type, scene });
     
-    const checkCollision = () => {
-      const powerUpPosition = new THREE.Vector3().copy(position);
-      
-      // Check collision with local player first
-      if (localPlayerId) {
-        const localPlayer = players[localPlayerId];
-        if (localPlayer && !localPlayer.isIt && localPlayer.isAlive) {
-          const playerPosition = new THREE.Vector3().copy(localPlayer.position);
-          const distance = powerUpPosition.distanceTo(playerPosition);
-          
-          // Increased collision radius for better collection
-          if (distance < 2.5) {
-            console.log('Local player collecting power-up:', localPlayerId); // Debug log
-            collectPowerUp(localPlayerId, id);
-            return; // Exit after collecting
-          }
+    // Ensure the model is properly scaled and positioned
+    scene.scale.set(0.75, 0.75, 0.75);
+    scene.position.set(position.x, position.y, position.z);
+    
+    // Log scene details
+    scene.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        console.log('Mesh found in model:', {
+          name: child.name,
+          geometry: child.geometry,
+          material: child.material,
+          position: child.position,
+          scale: child.scale,
+          rotation: child.rotation
+        });
+        
+        // Ensure materials are properly configured
+        if (child.material) {
+          child.material.transparent = true;
+          child.material.opacity = 1;
+          child.material.needsUpdate = true;
         }
       }
-      
-      // Then check collision with other players
+    });
+  } catch (error) {
+    console.error('Error loading model:', { type, error });
+  }
+
+  useEffect(() => {
+    if (!meshRef.current) return;
+
+    const checkCollision = () => {
+      if (!meshRef.current) return;
+
+      // Check collision with all non-"it" players
       Object.values(players).forEach(player => {
-        if (player.id !== localPlayerId && !player.isIt && player.isAlive) {
-          const playerPosition = new THREE.Vector3().copy(player.position);
-          const distance = powerUpPosition.distanceTo(playerPosition);
-          
-          if (distance < 2.5) {
-            console.log('Other player collecting power-up:', player.id); // Debug log
+        if (!player.isIt && player.isAlive) {
+          const distance = player.position.distanceTo(position);
+          if (distance < 3.75) { // Increased collision radius by 25% from 3.0
+            console.log(`Power-up collection! Player ${player.id} collected ${type} power-up`);
             collectPowerUp(player.id, id);
+            return; // Exit immediately after collection
           }
         }
       });
     };
-    
-    // Check for collisions more frequently
-    const interval = setInterval(checkCollision, 25); // Check every 25ms
+
+    const interval = setInterval(checkCollision, 50); // Check more frequently
     return () => clearInterval(interval);
-  }, [id, position, players, collectPowerUp, localPlayerId]);
-  
-  // Animation for the power-up
+  }, [id, players, collectPowerUp, type, position]);
+
   useFrame((state) => {
     if (!meshRef.current) return;
-    
-    // Hover animation
-    meshRef.current.position.y = position.y + Math.sin(state.clock.elapsedTime * 2) * 0.2 + 0.5;
-    
-    // Rotation animation
-    meshRef.current.rotation.y += 0.01;
+
+    // Hover effect
+    meshRef.current.position.y = position.y + Math.sin(state.clock.elapsedTime * 2) * 0.2;
+    // Rotation
+    meshRef.current.rotation.y = state.clock.elapsedTime;
   });
-  
-  // Use different geometries and materials based on power-up type
-  let geometry;
-  let material;
-  
-  switch (type) {
-    case 'speed':
-      geometry = <dodecahedronGeometry args={[0.5, 0]} />;
-      material = (
-        <meshStandardMaterial
-          color="#FFD700"
-          emissive="#FFFF00"
-          emissiveIntensity={0.5}
-          metalness={0.8}
-          roughness={0.2}
-        />
-      );
-      break;
-    
-    case 'invisibility':
-      geometry = <icosahedronGeometry args={[0.5, 0]} />;
-      material = (
-        <meshStandardMaterial
-          color="#FFFFFF"
-          transparent={true}
-          opacity={0.6}
-          emissive="#FFFFFF"
-          emissiveIntensity={0.2}
-          metalness={0.1}
-          roughness={0.1}
-        />
-      );
-      break;
-    
-    case 'flight':
-      geometry = <torusGeometry args={[0.3, 0.2, 16, 16]} />;
-      material = (
-        <meshStandardMaterial
-          color="#00BFFF"
-          emissive="#00FFFF"
-          emissiveIntensity={0.5}
-          metalness={0.6}
-          roughness={0.3}
-        />
-      );
-      break;
-    
-    default:
-      geometry = <sphereGeometry args={[0.5, 16, 16]} />;
-      material = <meshStandardMaterial color="#FFFFFF" />;
-  }
-  
+
+  if (!type || !scene) return null;
+
+  console.log('Rendering power-up:', { id, type, position }); // Debug log
+
   return (
-    <mesh
+    <primitive
       ref={meshRef}
+      object={scene}
       position={[position.x, position.y, position.z]}
-      castShadow
-    >
-      {geometry}
-      {material}
-    </mesh>
+      scale={[0.75, 0.75, 0.75]}
+      rotation={[0, 0, 0]}
+    />
   );
 };
 
-export default PowerUp;
+// Preload all power-up models
+useGLTF.preload('/assets/models/speed.glb');
+useGLTF.preload('/assets/models/invisibility.glb');
+useGLTF.preload('/assets/models/flight.glb');

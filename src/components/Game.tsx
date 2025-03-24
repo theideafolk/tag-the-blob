@@ -3,17 +3,17 @@
  * It also handles the game loop and rendering
  */
 import React, { useRef, useState, useEffect } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Stats } from '@react-three/drei';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls, PerspectiveCamera, Stats, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import Blob from './Blob';
 import Arena from './Arena';
 import Controls from './Controls';
 import MobileControls from './MobileControls';
-import PowerUp from './PowerUp';
+import { PowerUp } from './PowerUp';
 import GameUI from './GameUI';
 import { useGameStore, startPowerUpSpawner, startBotMovement } from '../store/gameStore';
-import { initializeSocket, emitPlayerJoin } from '../services/socket';
+import { io } from 'socket.io-client';
 
 const Game: React.FC = () => {
   const [isMobile, setIsMobile] = useState<boolean>(false);
@@ -28,7 +28,7 @@ const Game: React.FC = () => {
   
   // Initialize socket connection
   useEffect(() => {
-    const socket = initializeSocket();
+    const socket = io();
     
     // Clean up on unmount
     return () => {
@@ -39,7 +39,7 @@ const Game: React.FC = () => {
   // Initialize game systems
   useEffect(() => {
     // Start power-up spawner
-    startPowerUpSpawner();
+    const cleanup = startPowerUpSpawner();
     
     // Start bot movement
     startBotMovement();
@@ -48,7 +48,17 @@ const Game: React.FC = () => {
     if (localPlayerId) {
       useGameStore.getState().ensureMinimumPlayers();
     }
+
+    // Cleanup on unmount
+    return () => {
+      cleanup();
+    };
   }, [localPlayerId]);
+  
+  // Add debug logging for power-ups
+  useEffect(() => {
+    console.log('Current power-ups:', powerUps);
+  }, [powerUps]);
   
   // Set up fixed camera perspective and constraints
   useEffect(() => {
