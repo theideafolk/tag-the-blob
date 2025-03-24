@@ -130,50 +130,42 @@ const Blob: React.FC<BlobProps> = ({
   }, [player.powerUp, player.powerUpEndTime, player.isIt, isLocalPlayer]);
   
   // Handle collision detection with other players
-  useEffect(() => {
-    if (!blobRef.current || !player.isIt) return;
+  useFrame(() => {
+    if (!blobRef.current || !player.isIt || !player.isAlive) return;
     
-    const checkCollisions = () => {
-      if (!player.isIt || !player.isAlive) return;
-      
-      const players = useGameStore.getState().players;
-      const thisPosition = new THREE.Vector3().copy(player.position);
-      
-      Object.values(players).forEach(otherPlayer => {
-        if (otherPlayer.id === player.id || otherPlayer.isIt || !otherPlayer.isAlive) return;
-        
-        // Skip if other player has flight power-up
-        if (otherPlayer.powerUp === 'flight' && 
-            otherPlayer.powerUpEndTime && 
-            otherPlayer.powerUpEndTime > Date.now()) {
-          return;
-        }
-        
-        // Skip if other player has invisibility and we're not the local player
-        if (otherPlayer.powerUp === 'invisibility' && 
-            otherPlayer.powerUpEndTime && 
-            otherPlayer.powerUpEndTime > Date.now() && 
-            !isLocalPlayer) {
-          return;
-        }
-        
-        const otherPosition = new THREE.Vector3().copy(otherPlayer.position);
-        const distance = thisPosition.distanceTo(otherPosition);
-        
-        // Increased collision radius for better tagging
-        const collisionRadius = 2.0 * (player.scale + otherPlayer.scale) / 2;
-        
-        if (distance < collisionRadius) {
-          // Tag the player
-          tagPlayer(otherPlayer.id, player.id);
-        }
-      });
-    };
+    const players = useGameStore.getState().players;
+    const thisPosition = new THREE.Vector3().copy(player.position);
     
-    // Check for collisions more frequently
-    const collisionInterval = setInterval(checkCollisions, 50);
-    return () => clearInterval(collisionInterval);
-  }, [player.id, player.isIt, player.isAlive, player.position, player.scale, tagPlayer, isLocalPlayer]);
+    Object.values(players).forEach(otherPlayer => {
+      if (otherPlayer.id === player.id || otherPlayer.isIt || !otherPlayer.isAlive) return;
+      
+      // Skip if other player has flight power-up
+      if (otherPlayer.powerUp === 'flight' && 
+          otherPlayer.powerUpEndTime && 
+          otherPlayer.powerUpEndTime > Date.now()) {
+        return;
+      }
+      
+      // Skip if other player has invisibility and we're not the local player
+      if (otherPlayer.powerUp === 'invisibility' && 
+          otherPlayer.powerUpEndTime && 
+          otherPlayer.powerUpEndTime > Date.now() && 
+          !isLocalPlayer) {
+        return;
+      }
+      
+      const otherPosition = new THREE.Vector3().copy(otherPlayer.position);
+      const distance = thisPosition.distanceTo(otherPosition);
+      
+      // Increased collision radius for better tagging
+      const collisionRadius = 3.0 * (player.scale + otherPlayer.scale) / 2; // Increased from 2.0 to 3.0
+      
+      if (distance < collisionRadius) {
+        // Tag the player
+        tagPlayer(otherPlayer.id, player.id);
+      }
+    });
+  });
   
   // Handle movement in the game loop - ONLY for the local player
   useFrame((state, delta) => {

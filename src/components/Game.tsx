@@ -38,26 +38,32 @@ const Game: React.FC = () => {
   
   // Initialize game systems
   useEffect(() => {
+    console.log('Initializing game systems...'); // Debug log
+    
     // Start power-up spawner
     const cleanup = startPowerUpSpawner();
+    console.log('Power-up spawner started'); // Debug log
     
     // Start bot movement
     startBotMovement();
+    console.log('Bot movement started'); // Debug log
     
     // Ensure minimum number of players only once when component mounts
     if (localPlayerId) {
       useGameStore.getState().ensureMinimumPlayers();
+      console.log('Minimum players ensured'); // Debug log
     }
 
     // Cleanup on unmount
     return () => {
+      console.log('Cleaning up game systems...'); // Debug log
       cleanup();
     };
   }, [localPlayerId]);
   
   // Add debug logging for power-ups
   useEffect(() => {
-    console.log('Current power-ups:', powerUps);
+    console.log('Current power-ups:', powerUps); // Debug log
   }, [powerUps]);
   
   // Set up fixed camera perspective and constraints

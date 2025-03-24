@@ -630,10 +630,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       // Create new power-up before removing the old one
       const ARENA_SIZE = 40;
       const EDGE_PADDING = 5;
+      const MIN_X = -ARENA_SIZE/2 + EDGE_PADDING;
+      const MAX_X = ARENA_SIZE/2 - EDGE_PADDING;
+      const MIN_Z = -ARENA_SIZE/2 + EDGE_PADDING;
+      const MAX_Z = ARENA_SIZE/2 - EDGE_PADDING;
+      
+      // Generate random position within arena bounds
       const newPowerUpPosition = new THREE.Vector3(
-        (Math.random() - 0.5) * (ARENA_SIZE - EDGE_PADDING * 2),
+        MIN_X + Math.random() * (MAX_X - MIN_X),
         0.5, // Fixed at ground level
-        (Math.random() - 0.5) * (ARENA_SIZE - EDGE_PADDING * 2)
+        MIN_Z + Math.random() * (MAX_Z - MIN_Z)
       );
       
       // Randomly choose a new power-up type
@@ -655,7 +661,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       delete newPowerUps[powerUpId];
       
       // Automatically activate power-up when collected
-      const powerUpEndTime = Date.now() + 5000; // 5 seconds duration
+      const powerUpEndTime = Date.now() + 8000; // Increased from 5000 to 8000 ms (8 seconds)
       
       console.log('Activating power-up:', { playerId, type: powerUp.type, endTime: powerUpEndTime }); // Debug log
       
@@ -705,7 +711,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           }
         };
       });
-    }, 5000);
+    }, 8000); // Increased from 5000 to 8000 ms to match the power-up duration
   },
   
   // Activate a player's power-up
@@ -861,7 +867,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
 // Function to spawn power-ups randomly
 export const startPowerUpSpawner = () => {
-  const spawnPowerUp = () => {
+  const spawnPowerUp = (type?: PowerUpType) => {
     const gameStore = useGameStore.getState();
     
     // Removed game active check for testing
@@ -878,27 +884,50 @@ export const startPowerUpSpawner = () => {
       return;
     }
     
-    // Randomly choose a power-up type
+    // Use provided type or randomly choose one
     const powerUpTypes: PowerUpType[] = ['speed', 'invisibility', 'flight'];
-    const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+    const powerUpType = type || powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
     
-    // Random position within arena bounds with some padding
+    // Arena bounds
     const ARENA_SIZE = 40;
     const EDGE_PADDING = 5;
+    const MIN_X = -ARENA_SIZE/2 + EDGE_PADDING;
+    const MAX_X = ARENA_SIZE/2 - EDGE_PADDING;
+    const MIN_Z = -ARENA_SIZE/2 + EDGE_PADDING;
+    const MAX_Z = ARENA_SIZE/2 - EDGE_PADDING;
+    
+    // Generate random position within arena bounds
     const position = new THREE.Vector3(
-      (Math.random() - 0.5) * (ARENA_SIZE - EDGE_PADDING * 2),
+      MIN_X + Math.random() * (MAX_X - MIN_X),
       0.5, // Fixed at ground level (slightly above to be visible)
-      (Math.random() - 0.5) * (ARENA_SIZE - EDGE_PADDING * 2)
+      MIN_Z + Math.random() * (MAX_Z - MIN_Z)
     );
     
-    console.log('Spawning power-up:', { type, position });
-    gameStore.addPowerUp(type, position);
+    console.log('Spawning power-up:', { 
+      type: powerUpType, 
+      position,
+      bounds: {
+        x: [MIN_X, MAX_X],
+        z: [MIN_Z, MAX_Z]
+      }
+    });
+    
+    gameStore.addPowerUp(powerUpType, position);
   };
   
   // Spawn power-ups every 5-10 seconds
   const spawnInterval = setInterval(() => {
-    const currentPowerUps = Object.keys(useGameStore.getState().powerUps || {}).length;
-    console.log('Checking power-ups in interval:', currentPowerUps); // Debug log
+    const gameStore = useGameStore.getState();
+    const currentPowerUps = Object.keys(gameStore.powerUps || {}).length;
+    const powerUpTypes = Object.values(gameStore.powerUps || {}).map(p => p.type);
+    console.log('Checking power-ups in interval:', { 
+      count: currentPowerUps,
+      types: powerUpTypes,
+      positions: Object.values(gameStore.powerUps || {}).map(p => ({
+        type: p.type,
+        position: p.position
+      }))
+    }); // Debug log
     
     if (currentPowerUps < 3) {
       console.log('Spawning new power-up to maintain count');
@@ -906,13 +935,24 @@ export const startPowerUpSpawner = () => {
     }
   }, 5000 + Math.random() * 5000);
   
-  // Initial spawns to ensure we have 3 power-ups
-  const initialSpawns = 3 - Object.keys(useGameStore.getState().powerUps || {}).length;
-  console.log('Initial spawns needed:', initialSpawns); // Debug log
+  // Clear existing power-ups
+  useGameStore.setState({ powerUps: {} });
   
-  for (let i = 0; i < initialSpawns; i++) {
-    spawnPowerUp();
+  // Generate initial power-up types
+  const powerUpTypes: PowerUpType[] = ['speed', 'invisibility', 'flight'];
+  const initialTypes: PowerUpType[] = [];
+  
+  // Generate 3 random power-up types
+  for (let i = 0; i < 3; i++) {
+    initialTypes.push(powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)]);
   }
+  
+  console.log('Initial power-up types:', initialTypes); // Debug log
+  
+  // Spawn each power-up with its type
+  initialTypes.forEach(type => {
+    spawnPowerUp(type);
+  });
   
   // Cleanup on game end
   return () => {

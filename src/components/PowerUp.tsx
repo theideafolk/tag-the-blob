@@ -28,9 +28,8 @@ export const PowerUp: React.FC<PowerUpProps> = ({ id, position, type }) => {
     scene = result.scene;
     console.log('Model loaded successfully:', { type, scene });
     
-    // Ensure the model is properly scaled and positioned
+    // Only set scale, not position
     scene.scale.set(0.75, 0.75, 0.75);
-    scene.position.set(position.x, position.y, position.z);
     
     // Log scene details
     scene.traverse((child) => {
@@ -56,39 +55,36 @@ export const PowerUp: React.FC<PowerUpProps> = ({ id, position, type }) => {
     console.error('Error loading model:', { type, error });
   }
 
-  useEffect(() => {
+  // Use useFrame for collision detection instead of setInterval
+  useFrame(() => {
     if (!meshRef.current) return;
 
-    const checkCollision = () => {
-      if (!meshRef.current) return;
-
-      // Check collision with all non-"it" players
-      Object.values(players).forEach(player => {
-        if (!player.isIt && player.isAlive) {
-          const distance = player.position.distanceTo(position);
-          if (distance < 3.75) { // Increased collision radius by 25% from 3.0
-            console.log(`Power-up collection! Player ${player.id} collected ${type} power-up`);
-            collectPowerUp(player.id, id);
-            return; // Exit immediately after collection
-          }
+    // Check collision with all non-"it" players
+    Object.values(players).forEach(player => {
+      if (!player.isIt && player.isAlive) {
+        const distance = player.position.distanceTo(position);
+        if (distance < 5.5) { // Increased collision radius from 4.5 to 5.5
+          console.log(`Power-up collection! Player ${player.id} collected ${type} power-up`);
+          collectPowerUp(player.id, id);
         }
-      });
-    };
-
-    const interval = setInterval(checkCollision, 50); // Check more frequently
-    return () => clearInterval(interval);
-  }, [id, players, collectPowerUp, type, position]);
+      }
+    });
+  });
 
   useFrame((state) => {
     if (!meshRef.current) return;
 
-    // Hover effect
-    meshRef.current.position.y = position.y + Math.sin(state.clock.elapsedTime * 2) * 0.2;
+    // Only modify the Y position for hover effect
+    const baseY = position.y;
+    meshRef.current.position.y = baseY + Math.sin(state.clock.elapsedTime * 2) * 0.2;
     // Rotation
     meshRef.current.rotation.y = state.clock.elapsedTime;
   });
 
-  if (!type || !scene) return null;
+  if (!type || !scene) {
+    console.log('Not rendering power-up:', { type, scene }); // Debug log
+    return null;
+  }
 
   console.log('Rendering power-up:', { id, type, position }); // Debug log
 
