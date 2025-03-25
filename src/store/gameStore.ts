@@ -717,7 +717,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             powerUp: powerUp.type,
             powerUpEndTime,
             position: newPosition,
-            scale: powerUp.type === 'flight' ? player.scale * 1.2 : player.scale // Make flying blob slightly larger
+            scale: player.scale // Keep the same scale when collecting power-ups
           }
         },
         powerUps: newPowerUps
@@ -746,7 +746,7 @@ export const useGameStore = create<GameState>((set, get) => ({
               powerUp: null,
               powerUpEndTime: null,
               position: newPosition,
-              scale: player.scale / 1.2 // Reset scale when flight ends
+              scale: player.scale // Keep the current scale instead of reducing it
             }
           }
         };
