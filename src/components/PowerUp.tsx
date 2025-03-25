@@ -21,81 +21,53 @@ export const PowerUp: React.FC<PowerUpProps> = ({ id, position, type }) => {
   // Load the appropriate GLB model based on power-up type
   const modelPath = type ? `/assets/models/${type}.glb` : '';
   console.log('Loading power-up model:', { type, modelPath, position }); // Debug log
-  
-  let scene;
-  try {
-    const result = useGLTF(modelPath);
-    scene = result.scene;
-    console.log('Model loaded successfully:', { type, scene });
-    
-    // Only set scale, not position
-    scene.scale.set(0.75, 0.75, 0.75);
-    
-    // Log scene details
-    scene.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        console.log('Mesh found in model:', {
-          name: child.name,
-          geometry: child.geometry,
-          material: child.material,
-          position: child.position,
-          scale: child.scale,
-          rotation: child.rotation
-        });
-        
-        // Ensure materials are properly configured
-        if (child.material) {
-          child.material.transparent = true;
-          child.material.opacity = 1;
-          child.material.needsUpdate = true;
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error loading model:', { type, error });
-  }
+  const { scene } = useGLTF(modelPath);
 
-  // Use useFrame for collision detection instead of setInterval
+  // Use useFrame for continuous collision checking
   useFrame(() => {
     if (!meshRef.current) return;
 
     // Check collision with all non-"it" players
     Object.values(players).forEach(player => {
-      if (!player.isIt && player.isAlive) {
+      if (!player.isIt && player.isAlive && !player.powerUp) { // Only check if player has no active power-up
         const distance = player.position.distanceTo(position);
-        if (distance < 5.5) { // Increased collision radius from 4.5 to 5.5
+        if (distance < 3.75) { // Increased collision radius by 25% from 3.0
           console.log(`Power-up collection! Player ${player.id} collected ${type} power-up`);
           collectPowerUp(player.id, id);
         }
       }
     });
-  });
 
-  useFrame((state) => {
-    if (!meshRef.current) return;
-
-    // Only modify the Y position for hover effect
-    const baseY = position.y;
-    meshRef.current.position.y = baseY + Math.sin(state.clock.elapsedTime * 2) * 0.2;
+    // Hover effect
+    meshRef.current.position.y = position.y + Math.sin(Date.now() * 0.002) * 0.2;
     // Rotation
-    meshRef.current.rotation.y = state.clock.elapsedTime;
+    meshRef.current.rotation.y += 0.02;
   });
 
-  if (!type || !scene) {
-    console.log('Not rendering power-up:', { type, scene }); // Debug log
-    return null;
-  }
+  if (!type) return null;
 
   console.log('Rendering power-up:', { id, type, position }); // Debug log
 
+  // Get color based on power-up type
+  const color = type === 'speed' ? '#ff0000' : 
+                type === 'invisibility' ? '#00ff00' : 
+                '#0000ff'; // flight
+
   return (
-    <primitive
+    <mesh
       ref={meshRef}
-      object={scene}
       position={[position.x, position.y, position.z]}
-      scale={[0.75, 0.75, 0.75]}
-      rotation={[0, 0, 0]}
-    />
+      scale={[1, 1, 1]}
+    >
+      <sphereGeometry args={[0.5, 32, 32]} />
+      <meshStandardMaterial 
+        color={color}
+        metalness={0.5}
+        roughness={0.2}
+        emissive={color}
+        emissiveIntensity={0.5}
+      />
+    </mesh>
   );
 };
 

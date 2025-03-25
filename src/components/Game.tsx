@@ -38,32 +38,26 @@ const Game: React.FC = () => {
   
   // Initialize game systems
   useEffect(() => {
-    console.log('Initializing game systems...'); // Debug log
-    
     // Start power-up spawner
     const cleanup = startPowerUpSpawner();
-    console.log('Power-up spawner started'); // Debug log
     
     // Start bot movement
     startBotMovement();
-    console.log('Bot movement started'); // Debug log
     
     // Ensure minimum number of players only once when component mounts
     if (localPlayerId) {
       useGameStore.getState().ensureMinimumPlayers();
-      console.log('Minimum players ensured'); // Debug log
     }
 
     // Cleanup on unmount
     return () => {
-      console.log('Cleaning up game systems...'); // Debug log
       cleanup();
     };
   }, [localPlayerId]);
   
   // Add debug logging for power-ups
   useEffect(() => {
-    console.log('Current power-ups:', powerUps); // Debug log
+    console.log('Current power-ups:', powerUps);
   }, [powerUps]);
   
   // Set up fixed camera perspective and constraints
@@ -109,16 +103,16 @@ const Game: React.FC = () => {
       const localPlayer = players[localPlayerId];
       if (!localPlayer) return;
       
-      // Update orbit controls target to follow player
+      // Update orbit controls target to follow player's X and Z position, but maintain fixed Y
       orbitControlsRef.current.target.set(
         localPlayer.position.x,
-        localPlayer.position.y,
+        1, // Fixed Y target at ground level
         localPlayer.position.z
       );
       
       // Calculate camera position to be behind player based on player's rotation
       const distance = 12; // Distance behind player
-      const height = 8;   // Height above player
+      const height = 8;   // Fixed height above ground
       
       // Move camera position to follow player with a slight delay for smoothness
       cameraRef.current.position.x = THREE.MathUtils.lerp(
@@ -133,11 +127,19 @@ const Game: React.FC = () => {
         0.05
       );
       
-      cameraRef.current.position.y = THREE.MathUtils.lerp(
-        cameraRef.current.position.y, 
-        localPlayer.position.y + height, 
-        0.05
-      );
+      // Keep camera at fixed height regardless of player's Y position
+      cameraRef.current.position.y = height;
+      
+      // Adjust camera angle based on player's height
+      if (localPlayer.powerUp === 'flight') {
+        // When flying, tilt camera slightly upward to show more sky
+        orbitControlsRef.current.minPolarAngle = Math.PI / 4; // 45 degrees
+        orbitControlsRef.current.maxPolarAngle = Math.PI / 2; // 90 degrees
+      } else {
+        // Normal camera angles
+        orbitControlsRef.current.minPolarAngle = Math.PI / 6; // 30 degrees
+        orbitControlsRef.current.maxPolarAngle = Math.PI / 2.5; // 72 degrees
+      }
     };
     
     // Update camera immediately and set interval for continuous updates
@@ -187,7 +189,7 @@ const Game: React.FC = () => {
         <PerspectiveCamera
           ref={cameraRef}
           makeDefault
-          position={[0, 15, 15]}
+          position={[0, 8, 15]}
           fov={60}
         />
         <OrbitControls

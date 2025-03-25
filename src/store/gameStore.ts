@@ -628,23 +628,61 @@ export const useGameStore = create<GameState>((set, get) => ({
       emitPowerUpCollected(powerUpId);
       
       // Create new power-up before removing the old one
+      const MIN_DISTANCE_BETWEEN_POWERUPS = 8; // Minimum distance between power-ups
       const ARENA_SIZE = 40;
       const EDGE_PADDING = 5;
-      const MIN_X = -ARENA_SIZE/2 + EDGE_PADDING;
-      const MAX_X = ARENA_SIZE/2 - EDGE_PADDING;
-      const MIN_Z = -ARENA_SIZE/2 + EDGE_PADDING;
-      const MAX_Z = ARENA_SIZE/2 - EDGE_PADDING;
+      const ARENA_BOUNDS = {
+        minX: -ARENA_SIZE/2 + EDGE_PADDING,
+        maxX: ARENA_SIZE/2 - EDGE_PADDING,
+        minZ: -ARENA_SIZE/2 + EDGE_PADDING,
+        maxZ: ARENA_SIZE/2 - EDGE_PADDING
+      };
       
-      // Generate random position within arena bounds
-      const newPowerUpPosition = new THREE.Vector3(
-        MIN_X + Math.random() * (MAX_X - MIN_X),
-        0.5, // Fixed at ground level
-        MIN_Z + Math.random() * (MAX_Z - MIN_Z)
-      );
+      const isValidPosition = (position: THREE.Vector3, existingPowerUps: Record<string, PowerUp>): boolean => {
+        // Check if position is within arena bounds
+        if (position.x < ARENA_BOUNDS.minX || position.x > ARENA_BOUNDS.maxX ||
+            position.z < ARENA_BOUNDS.minZ || position.z > ARENA_BOUNDS.maxZ) {
+          return false;
+        }
+
+        // Check distance from all existing power-ups
+        return Object.values(existingPowerUps).every(powerUp => 
+          position.distanceTo(powerUp.position) >= MIN_DISTANCE_BETWEEN_POWERUPS
+        );
+      };
+
+      const findValidPosition = (existingPowerUps: Record<string, PowerUp>): THREE.Vector3 | null => {
+        const maxAttempts = 50; // Prevent infinite loop
+        let attempts = 0;
+
+        while (attempts < maxAttempts) {
+          const position = new THREE.Vector3(
+            ARENA_BOUNDS.minX + Math.random() * (ARENA_BOUNDS.maxX - ARENA_BOUNDS.minX),
+            0.5, // Fixed at ground level
+            ARENA_BOUNDS.minZ + Math.random() * (ARENA_BOUNDS.maxZ - ARENA_BOUNDS.minZ)
+          );
+
+          if (isValidPosition(position, existingPowerUps)) {
+            return position;
+          }
+
+          attempts++;
+        }
+
+        return null;
+      };
       
       // Randomly choose a new power-up type
       const powerUpTypes: PowerUpType[] = ['speed', 'invisibility', 'flight'];
       const newType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+      
+      // Find a valid position for the new power-up
+      const newPowerUpPosition = findValidPosition(state.powerUps);
+      
+      if (!newPowerUpPosition) {
+        console.log('Could not find valid position for new power-up, skipping spawn');
+        return state;
+      }
       
       const newPowerUpId = `powerup-${uuidv4()}`;
       const newPowerUps = {
@@ -661,14 +699,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       delete newPowerUps[powerUpId];
       
       // Automatically activate power-up when collected
-      const powerUpEndTime = Date.now() + 8000; // Increased from 5000 to 8000 ms (8 seconds)
+      const powerUpEndTime = Date.now() + 7000; // 7 seconds duration
       
       console.log('Activating power-up:', { playerId, type: powerUp.type, endTime: powerUpEndTime }); // Debug log
       
       // Apply immediate effects based on power-up type
       let newPosition = player.position.clone();
       if (powerUp.type === 'flight') {
-        newPosition.y = 2; // Set flight height
+        newPosition.y = 16; // Set flight height to 16 units
       }
       
       return {
@@ -678,14 +716,15 @@ export const useGameStore = create<GameState>((set, get) => ({
             ...player,
             powerUp: powerUp.type,
             powerUpEndTime,
-            position: newPosition
+            position: newPosition,
+            scale: powerUp.type === 'flight' ? player.scale * 1.2 : player.scale // Make flying blob slightly larger
           }
         },
         powerUps: newPowerUps
       };
     });
     
-    // Schedule power-up deactivation
+    // Schedule power-up deactivation with smooth transition
     setTimeout(() => {
       set(state => {
         const player = state.players[playerId];
@@ -696,7 +735,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         // Reset position when flight power-up ends
         let newPosition = player.position.clone();
         if (player.powerUp === 'flight') {
-          newPosition.y = 1;
+          newPosition.y = 1; // Reset to ground level
         }
         
         return {
@@ -706,12 +745,13 @@ export const useGameStore = create<GameState>((set, get) => ({
               ...player,
               powerUp: null,
               powerUpEndTime: null,
-              position: newPosition
+              position: newPosition,
+              scale: player.scale / 1.2 // Reset scale when flight ends
             }
           }
         };
       });
-    }, 8000); // Increased from 5000 to 8000 ms to match the power-up duration
+    }, 7000); // Updated to 7 seconds
   },
   
   // Activate a player's power-up
@@ -867,15 +907,52 @@ export const useGameStore = create<GameState>((set, get) => ({
 
 // Function to spawn power-ups randomly
 export const startPowerUpSpawner = () => {
-  const spawnPowerUp = (type?: PowerUpType) => {
+  const MIN_DISTANCE_BETWEEN_POWERUPS = 8; // Minimum distance between power-ups
+  const ARENA_SIZE = 40;
+  const EDGE_PADDING = 5;
+  const ARENA_BOUNDS = {
+    minX: -ARENA_SIZE/2 + EDGE_PADDING,
+    maxX: ARENA_SIZE/2 - EDGE_PADDING,
+    minZ: -ARENA_SIZE/2 + EDGE_PADDING,
+    maxZ: ARENA_SIZE/2 - EDGE_PADDING
+  };
+  
+  const isValidPosition = (position: THREE.Vector3, existingPowerUps: Record<string, PowerUp>): boolean => {
+    // Check if position is within arena bounds
+    if (position.x < ARENA_BOUNDS.minX || position.x > ARENA_BOUNDS.maxX ||
+        position.z < ARENA_BOUNDS.minZ || position.z > ARENA_BOUNDS.maxZ) {
+      return false;
+    }
+
+    // Check distance from all existing power-ups
+    return Object.values(existingPowerUps).every(powerUp => 
+      position.distanceTo(powerUp.position) >= MIN_DISTANCE_BETWEEN_POWERUPS
+    );
+  };
+
+  const findValidPosition = (existingPowerUps: Record<string, PowerUp>): THREE.Vector3 | null => {
+    const maxAttempts = 50; // Prevent infinite loop
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      const position = new THREE.Vector3(
+        ARENA_BOUNDS.minX + Math.random() * (ARENA_BOUNDS.maxX - ARENA_BOUNDS.minX),
+        0.5, // Fixed at ground level
+        ARENA_BOUNDS.minZ + Math.random() * (ARENA_BOUNDS.maxZ - ARENA_BOUNDS.minZ)
+      );
+
+      if (isValidPosition(position, existingPowerUps)) {
+        return position;
+      }
+
+      attempts++;
+    }
+
+    return null;
+  };
+
+  const spawnPowerUp = () => {
     const gameStore = useGameStore.getState();
-    
-    // Removed game active check for testing
-    // if (!gameStore.isGameActive) {
-    //   console.log('Game not active, skipping power-up spawn');
-    //   return;
-    // }
-    
     const currentPowerUps = Object.keys(gameStore.powerUps || {}).length;
     console.log('Current power-ups:', currentPowerUps); // Debug log
     
@@ -884,50 +961,25 @@ export const startPowerUpSpawner = () => {
       return;
     }
     
-    // Use provided type or randomly choose one
+    // Randomly choose a power-up type
     const powerUpTypes: PowerUpType[] = ['speed', 'invisibility', 'flight'];
-    const powerUpType = type || powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+    const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
     
-    // Arena bounds
-    const ARENA_SIZE = 40;
-    const EDGE_PADDING = 5;
-    const MIN_X = -ARENA_SIZE/2 + EDGE_PADDING;
-    const MAX_X = ARENA_SIZE/2 - EDGE_PADDING;
-    const MIN_Z = -ARENA_SIZE/2 + EDGE_PADDING;
-    const MAX_Z = ARENA_SIZE/2 - EDGE_PADDING;
+    // Find a valid position that maintains minimum distance from other power-ups
+    const position = findValidPosition(gameStore.powerUps);
     
-    // Generate random position within arena bounds
-    const position = new THREE.Vector3(
-      MIN_X + Math.random() * (MAX_X - MIN_X),
-      0.5, // Fixed at ground level (slightly above to be visible)
-      MIN_Z + Math.random() * (MAX_Z - MIN_Z)
-    );
-    
-    console.log('Spawning power-up:', { 
-      type: powerUpType, 
-      position,
-      bounds: {
-        x: [MIN_X, MAX_X],
-        z: [MIN_Z, MAX_Z]
-      }
-    });
-    
-    gameStore.addPowerUp(powerUpType, position);
+    if (position) {
+      console.log('Spawning power-up:', { type, position });
+      gameStore.addPowerUp(type, position);
+    } else {
+      console.log('Could not find valid position for power-up, skipping spawn');
+    }
   };
   
   // Spawn power-ups every 5-10 seconds
   const spawnInterval = setInterval(() => {
-    const gameStore = useGameStore.getState();
-    const currentPowerUps = Object.keys(gameStore.powerUps || {}).length;
-    const powerUpTypes = Object.values(gameStore.powerUps || {}).map(p => p.type);
-    console.log('Checking power-ups in interval:', { 
-      count: currentPowerUps,
-      types: powerUpTypes,
-      positions: Object.values(gameStore.powerUps || {}).map(p => ({
-        type: p.type,
-        position: p.position
-      }))
-    }); // Debug log
+    const currentPowerUps = Object.keys(useGameStore.getState().powerUps || {}).length;
+    console.log('Checking power-ups in interval:', currentPowerUps); // Debug log
     
     if (currentPowerUps < 3) {
       console.log('Spawning new power-up to maintain count');
@@ -935,24 +987,13 @@ export const startPowerUpSpawner = () => {
     }
   }, 5000 + Math.random() * 5000);
   
-  // Clear existing power-ups
-  useGameStore.setState({ powerUps: {} });
+  // Initial spawns to ensure we have 3 power-ups
+  const initialSpawns = 3 - Object.keys(useGameStore.getState().powerUps || {}).length;
+  console.log('Initial spawns needed:', initialSpawns); // Debug log
   
-  // Generate initial power-up types
-  const powerUpTypes: PowerUpType[] = ['speed', 'invisibility', 'flight'];
-  const initialTypes: PowerUpType[] = [];
-  
-  // Generate 3 random power-up types
-  for (let i = 0; i < 3; i++) {
-    initialTypes.push(powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)]);
+  for (let i = 0; i < initialSpawns; i++) {
+    spawnPowerUp();
   }
-  
-  console.log('Initial power-up types:', initialTypes); // Debug log
-  
-  // Spawn each power-up with its type
-  initialTypes.forEach(type => {
-    spawnPowerUp(type);
-  });
   
   // Cleanup on game end
   return () => {
