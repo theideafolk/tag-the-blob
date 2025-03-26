@@ -14,6 +14,7 @@ import { PowerUp } from './PowerUp';
 import GameUI from './GameUI';
 import { useGameStore, startPowerUpSpawner, startBotMovement } from '../store/gameStore';
 import { io } from 'socket.io-client';
+import Trees from './Trees';
 
 const Game: React.FC = () => {
   const [isMobile, setIsMobile] = useState<boolean>(false);
@@ -165,7 +166,11 @@ const Game: React.FC = () => {
 
   return (
     <div className="w-full h-screen">
-      <Canvas shadows>
+      <Canvas shadows gl={{ alpha: false }}>
+        {/* Scene background color */}
+        <color attach="background" args={['#90B66D']} /> {/* Lighter grass green to match arena */}
+        <fog attach="fog" args={['rgba(255, 255, 255, 0.8)', 35, 70]} /> {/* Transparent white fog */}
+        
         {/* Lighting setup */}
         <ambientLight intensity={0.8} /> {/* Increase ambient light */}
         <directionalLight
@@ -203,6 +208,7 @@ const Game: React.FC = () => {
         />
 
         {/* Game elements */}
+        <Trees /> {/* Add decorative trees in the background */}
         <Arena />
         {Object.values(players).map((player) => (
           <Blob
